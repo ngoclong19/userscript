@@ -1,18 +1,21 @@
 // ==UserScript==
 // @name            Twitch - hitsquadgodfather
 // @namespace       long-hoang.name.vn
-// @version         0.0.1
+// @version         0.0.2
 // @description     🤖 Auto send chat commands on button click!
 // @description:vi  🤖 Tự động gửi lệnh trò chuyện khi nhấp vào nút!
 // @author          ngoclong19
 // @match           https://www.twitch.tv/hitsquadgodfather
 // @icon            https://www.google.com.vn/s2/favicons?sz=64&domain=twitch.tv
 // @grant           none
-// @source          https://github.com/ngoclong19/userscript
+// @source          https://github.com/ngoclong19/userscripts
 // ==/UserScript==
 
 // References
+// https://github.com/browserify/events/blob/0f82983a59ec58cde39da8211d5280649ad87e8f/events.js
 // https://github.com/night/betterttv/blob/d97e5b7790ea05ee4db557b0456ddf00c2c88898/src/modules/emote_menu/twitch/EmoteMenu.jsx
+// https://github.com/night/betterttv/blob/b544aee0395f04af17521fd936b79da9a0755b94/src/observers/dom.js
+// https://github.com/night/betterttv/blob/24f21e5595e105694038ade472229e0798e10b1c/src/utils/safe-event-emitter.js
 // https://github.com/night/betterttv/blob/47e4083decf3880ea094b82d31278b6beec13bb8/src/utils/twitch.js
 
 (function () {
@@ -23,6 +26,20 @@
   const CHAT_SETTINGS_BUTTON_CONTAINER_SELECTOR =
     '.chat-input div[data-test-selector="chat-input-buttons-container"]';
   const MSG_INTERVAL = 1500;
+  const IGNORED_HTML_TAGS = new Set([
+    'BR',
+    'HEAD',
+    'LINK',
+    'META',
+    'SCRIPT',
+    'STYLE',
+  ]);
+
+  let observer;
+  const observedIds = Object.create(null);
+  const observedClassNames = Object.create(null);
+  const observedTestSelectors = Object.create(null);
+  const attributeObservers = new Map();
 
   const getReactInstance = (element) => {
     for (const key in element) {
@@ -81,23 +98,507 @@
     sendChatMessage('!gauntlet');
   };
 
-  const container = document.querySelector(
-    CHAT_SETTINGS_BUTTON_CONTAINER_SELECTOR
-  );
-  if (container == null) {
-    console.log('`container` not found');
-    return;
+  const loadButton = () => {
+    const container = document.querySelector(
+      CHAT_SETTINGS_BUTTON_CONTAINER_SELECTOR
+    );
+    if (container == null) {
+      console.log('`container` not found');
+      return;
+    }
+    const rightContainer = container.lastChild;
+    const buttonContainer = document.createElement('div');
+    rightContainer.insertBefore(buttonContainer, rightContainer.firstChild);
+
+    const button = document.createElement('button');
+    button.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Pro 6.2.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2022 Fonticons, Inc. --><path d="M320 0c17.7 0 32 14.3 32 32V96H480c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H160c-35.3 0-64-28.7-64-64V160c0-35.3 28.7-64 64-64H288V32c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H208zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H304zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H400zM264 256c0-22.1-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40s40-17.9 40-40zm152 40c22.1 0 40-17.9 40-40s-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40zM48 224H64V416H48c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H576V224h16z"/></svg>';
+    button.style.width = button.style.height = '2rem';
+    button.firstChild.style.fill = 'currentcolor';
+    button.onclick = clickHandler;
+
+    buttonContainer.append(button);
+  };
+
+  const newListener = (listener, ...args) => {
+    try {
+      listener(...args);
+    } catch (e) {
+      console.error('Failed executing listener callback', e.stack);
+    }
+  };
+
+  const parseSelector = (selector) => {
+    const partialSelectors = selector.split(',').map((s) => s.trim());
+    const ids = [];
+    const classNames = [];
+    const testSelectors = [];
+    for (const partialSelector of partialSelectors) {
+      if (partialSelector.startsWith('#')) {
+        ids.push({
+          key: partialSelector.split(' ')[0].split('#')[1],
+          partialSelector,
+        });
+      } else if (partialSelector.startsWith('.')) {
+        classNames.push({
+          key: partialSelector.split(' ')[0].split('.')[1],
+          partialSelector,
+        });
+      } else if (partialSelector.includes('[data-test-selector')) {
+        testSelectors.push({
+          key: partialSelector
+            .split(' ')[0]
+            .split('[data-test-selector="')[1]
+            .split('"]')[0],
+          partialSelector,
+        });
+      }
+    }
+    return {
+      ids,
+      classNames,
+      testSelectors,
+    };
+  };
+
+  const startAttributeObserver = (observedType, emitter, node) => {
+    const attributeObserver = new window.MutationObserver(() =>
+      emitter.emit(observedType.selector, node, node.isConnected)
+    );
+    attributeObserver.observe(node, { attributes: true, subtree: true });
+    attributeObservers.set(observedType, attributeObserver);
+  };
+
+  const stopAttributeObserver = (observedType) => {
+    const attributeObserver = attributeObservers.get(observedType);
+    if (!attributeObserver) {
+      return;
+    }
+
+    attributeObserver.disconnect();
+    attributeObservers.delete(observedType);
+  };
+
+  const processObservedResults = (emitter, target, node, results) => {
+    if (!results || results.length === 0) {
+      return;
+    }
+
+    for (const observedType of results) {
+      const { partialSelector, selector, options } = observedType;
+      let foundNode = partialSelector.includes(' ')
+        ? node.querySelector(selector)
+        : node;
+      if (!foundNode) {
+        continue;
+      }
+      if (options && options.useParentNode) {
+        foundNode = node;
+      }
+      if (options && options.useTargetNode) {
+        foundNode = target;
+      }
+      const { isConnected } = foundNode;
+      if (options && options.attributes) {
+        if (isConnected) {
+          startAttributeObserver(observedType, emitter, foundNode);
+        } else {
+          stopAttributeObserver(observedType);
+        }
+      }
+      emitter.emit(selector, foundNode, isConnected);
+    }
+  };
+
+  const processMutations = (emitter, nodes) => {
+    if (!nodes || nodes.length === 0) {
+      return;
+    }
+
+    for (const [target, node] of nodes) {
+      let nodeId = node.id;
+      if (typeof nodeId === 'string' && nodeId.length > 0) {
+        nodeId = nodeId.trim();
+        processObservedResults(emitter, target, node, observedIds[nodeId]);
+      }
+
+      let testSelector = node.getAttribute('data-test-selector');
+      if (typeof testSelector === 'string' && testSelector.length > 0) {
+        testSelector = testSelector.trim();
+        processObservedResults(
+          emitter,
+          target,
+          node,
+          observedTestSelectors[testSelector]
+        );
+      }
+
+      const nodeClassList = node.classList;
+      if (nodeClassList && nodeClassList.length > 0) {
+        for (let className of nodeClassList) {
+          className = className.trim();
+          processObservedResults(
+            emitter,
+            target,
+            node,
+            observedClassNames[className]
+          );
+        }
+      }
+    }
+  };
+
+  class EventEmitter {
+    constructor() {
+      EventEmitter.init.call(this);
+
+      // By default EventEmitters will print a warning if more than 10 listeners are
+      // added to it. This is a useful default which helps finding memory leaks.
+      this.defaultMaxListeners = 10;
+    }
+
+    static init() {
+      if (
+        this._events === undefined ||
+        this._events === Object.getPrototypeOf(this)._events
+      ) {
+        this._events = Object.create(null);
+        this._eventsCount = 0;
+      }
+
+      this._maxListeners = this._maxListeners || undefined;
+    }
+
+    // Obviously not all Emitters should be limited to 10. This function allows
+    // that to be increased. Set to zero for unlimited.
+    setMaxListeners(n) {
+      if (typeof n !== 'number' || n < 0 || Number.isNaN(n)) {
+        throw new RangeError(
+          'The value of "n" is out of range. It must be a non-negative number. Received ' +
+            n +
+            '.'
+        );
+      }
+      this._maxListeners = n;
+      return this;
+    }
+
+    emit(type) {
+      let args = [];
+      for (let i = 1; i < arguments.length; i++) args.push(arguments[i]);
+      let doError = type === 'error';
+
+      let events = this._events;
+      if (events !== undefined) doError = doError && events.error === undefined;
+      else if (!doError) return false;
+
+      // If there is no 'error' event listener then throw.
+      if (doError) {
+        let er;
+        if (args.length > 0) er = args[0];
+        if (er instanceof Error) {
+          // Note: The comments on the `throw` lines are intentional, they show
+          // up in Node's output if this results in an unhandled exception.
+          throw er; // Unhandled 'error' event
+        }
+        // At least give some kind of context to the user
+        let err = new Error(
+          'Unhandled error.' + (er ? ' (' + er.message + ')' : '')
+        );
+        err.context = er;
+        throw err; // Unhandled 'error' event
+      }
+
+      let handler = events[type];
+
+      if (handler === undefined) return false;
+
+      const arrayClone = (arr, n) => {
+        var copy = new Array(n);
+        for (var i = 0; i < n; ++i) copy[i] = arr[i];
+        return copy;
+      };
+
+      if (typeof handler === 'function') {
+        Reflect.apply(handler, this, args);
+      } else {
+        let len = handler.length;
+        let listeners = arrayClone(handler, len);
+        for (let i = 0; i < len; ++i) Reflect.apply(listeners[i], this, args);
+      }
+
+      return true;
+    }
+
+    on(type, listener) {
+      return this._addListener(this, type, listener, false);
+    }
+
+    off(type, listener) {
+      return this.removeListener(type, listener);
+    }
+
+    // Emits a 'removeListener' event if and only if the listener was removed.
+    removeListener(type, listener) {
+      let list, events, position, i, originalListener;
+
+      this.checkListener(listener);
+
+      events = this._events;
+      if (events === undefined) return this;
+
+      list = events[type];
+      if (list === undefined) return this;
+
+      if (list === listener || list.listener === listener) {
+        if (--this._eventsCount === 0) this._events = Object.create(null);
+        else {
+          delete events[type];
+          if (events.removeListener) {
+            this.emit('removeListener', type, list.listener || listener);
+          }
+        }
+      } else if (typeof list !== 'function') {
+        position = -1;
+
+        for (i = list.length - 1; i >= 0; i--) {
+          if (list[i] === listener || list[i].listener === listener) {
+            originalListener = list[i].listener;
+            position = i;
+            break;
+          }
+        }
+
+        if (position < 0) return this;
+
+        const spliceOne = (list, index) => {
+          for (; index + 1 < list.length; index++) {
+            list[index] = list[index + 1];
+          }
+          list.pop();
+        };
+        if (position === 0) list.shift();
+        else {
+          spliceOne(list, position);
+        }
+
+        if (list.length === 1) events[type] = list[0];
+
+        if (events.removeListener !== undefined) {
+          this.emit('removeListener', type, originalListener || listener);
+        }
+      }
+
+      return this;
+    }
+
+    checkListener(listener) {
+      if (typeof listener !== 'function') {
+        throw new TypeError(
+          'The "listener" argument must be of type Function. Received type ' +
+            typeof listener
+        );
+      }
+    }
+
+    _addListener(target, type, listener, prepend) {
+      let m;
+      let events;
+      let existing;
+
+      this.checkListener(listener);
+
+      events = target._events;
+      if (events === undefined) {
+        events = target._events = Object.create(null);
+        target._eventsCount = 0;
+      } else {
+        // To avoid recursion in the case that type === "newListener"! Before
+        // adding it to the listeners, first emit "newListener".
+        if (events.newListener !== undefined) {
+          target.emit(
+            'newListener',
+            type,
+            listener.listener ? listener.listener : listener
+          );
+
+          // Re-assign `events` because a newListener handler could have caused the
+          // this._events to be assigned to a new object
+          events = target._events;
+        }
+        existing = events[type];
+      }
+
+      if (existing === undefined) {
+        // Optimize the case of one listener. Don't need the extra array object.
+        existing = events[type] = listener;
+        ++target._eventsCount;
+      } else {
+        if (typeof existing === 'function') {
+          // Adding the second element, need to change to array.
+          existing = events[type] = prepend
+            ? [listener, existing]
+            : [existing, listener];
+          // If we've already got an array, just append.
+        } else if (prepend) {
+          existing.unshift(listener);
+        } else {
+          existing.push(listener);
+        }
+
+        // Check for listener leak
+        const _getMaxListeners = (that) => {
+          if (that._maxListeners === undefined) {
+            return EventEmitter.defaultMaxListeners;
+          }
+          return that._maxListeners;
+        };
+        m = _getMaxListeners(target);
+        if (m > 0 && existing.length > m && !existing.warned) {
+          existing.warned = true;
+          // No error code for this since it is a Warning
+          // eslint-disable-next-line no-restricted-syntax
+          let w = new Error(
+            'Possible EventEmitter memory leak detected. ' +
+              existing.length +
+              ' ' +
+              String(type) +
+              ' listeners ' +
+              'added. Use emitter.setMaxListeners() to ' +
+              'increase limit'
+          );
+          w.name = 'MaxListenersExceededWarning';
+          w.emitter = target;
+          w.type = type;
+          w.count = existing.length;
+          console.warn(w);
+        }
+      }
+
+      return target;
+    }
   }
-  const rightContainer = container.lastChild;
-  const buttonContainer = document.createElement('div');
-  rightContainer.insertBefore(buttonContainer, rightContainer.firstChild);
 
-  const button = document.createElement('button');
-  button.innerHTML =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Pro 6.2.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2022 Fonticons, Inc. --><path d="M320 0c17.7 0 32 14.3 32 32V96H480c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H160c-35.3 0-64-28.7-64-64V160c0-35.3 28.7-64 64-64H288V32c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H208zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H304zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H400zM264 256c0-22.1-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40s40-17.9 40-40zm152 40c22.1 0 40-17.9 40-40s-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40zM48 224H64V416H48c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H576V224h16z"/></svg>';
-  button.style.width = button.style.height = '2rem';
-  button.firstChild.style.fill = 'currentcolor';
-  button.onclick = clickHandler;
+  class SafeEventEmitter extends EventEmitter {
+    constructor() {
+      super();
 
-  buttonContainer.append(button);
+      this.setMaxListeners(100);
+    }
+
+    on(type, listener) {
+      const callback = newListener.bind(this, listener);
+      super.on(type, callback);
+      return () => super.off(type, callback);
+    }
+  }
+
+  class DOMObserver extends SafeEventEmitter {
+    constructor() {
+      super();
+
+      observer = new window.MutationObserver((mutations) => {
+        const pendingNodes = [];
+
+        for (const { addedNodes, removedNodes, target } of mutations) {
+          if (
+            !addedNodes ||
+            !removedNodes ||
+            (addedNodes.length === 0 && removedNodes.length === 0)
+          ) {
+            continue;
+          }
+
+          for (let i = 0; i < 2; i++) {
+            const nodes = i === 0 ? addedNodes : removedNodes;
+            for (const node of nodes) {
+              if (
+                node.nodeType !== Node.ELEMENT_NODE ||
+                IGNORED_HTML_TAGS.has(node.nodeName)
+              ) {
+                continue;
+              }
+
+              pendingNodes.push([target, node]);
+              if (node.childElementCount === 0) {
+                continue;
+              }
+
+              for (const childNode of node.querySelectorAll('[id],[class]')) {
+                pendingNodes.push([target, childNode]);
+              }
+            }
+          }
+        }
+
+        if (pendingNodes.length === 0) {
+          return;
+        }
+
+        processMutations(this, pendingNodes);
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    }
+
+    on(selector, callback, options) {
+      const parsedSelector = parseSelector(selector);
+
+      const initialNodes = [];
+      for (const selectorType of Object.keys(parsedSelector)) {
+        let observedSelectorType;
+        switch (selectorType) {
+          case 'ids':
+            observedSelectorType = observedIds;
+            break;
+          case 'classNames':
+            observedSelectorType = observedClassNames;
+            break;
+          case 'testSelectors':
+            observedSelectorType = observedTestSelectors;
+            break;
+          default:
+            break;
+        }
+
+        for (const { key, partialSelector } of parsedSelector[selectorType]) {
+          const currentObservedTypeSelectors = observedSelectorType[key];
+          const observedType = { partialSelector, selector, options };
+          if (!currentObservedTypeSelectors) {
+            observedSelectorType[key] = [observedType];
+          } else {
+            currentObservedTypeSelectors.push(observedType);
+          }
+
+          if (observedSelectorType === observedIds) {
+            initialNodes.push(...document.querySelectorAll(`#${key}`));
+          } else if (observedSelectorType === observedClassNames) {
+            initialNodes.push(...document.getElementsByClassName(key));
+          }
+        }
+      }
+
+      const result = super.on(selector, callback);
+
+      // trigger dom mutations for existing elements for on page
+      processMutations(
+        this,
+        initialNodes.map((node) => [node.parentElement, node])
+      );
+
+      return result;
+    }
+  }
+
+  const domObserver = new DOMObserver();
+
+  domObserver.on(
+    CHAT_SETTINGS_BUTTON_CONTAINER_SELECTOR,
+    (_node, isConnected) => {
+      if (!isConnected) {
+        return;
+      }
+
+      loadButton();
+    }
+  );
 })();
