@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Twitch - hitsquadgodfather
 // @namespace       long-hoang.name.vn
-// @version         0.0.2
+// @version         0.0.3
 // @description     🤖 Auto send chat commands on button click!
 // @description:vi  🤖 Tự động gửi lệnh trò chuyện khi nhấp vào nút!
 // @author          ngoclong19
@@ -9,10 +9,10 @@
 // @icon            https://www.google.com.vn/s2/favicons?sz=64&domain=twitch.tv
 // @grant           none
 // @source          https://github.com/ngoclong19/userscripts
+// @require         https://cdn.jsdelivr.net/npm/eventemitter3@5.0.0/dist/eventemitter3.umd.min.js
 // ==/UserScript==
 
 // References
-// https://github.com/browserify/events/blob/0f82983a59ec58cde39da8211d5280649ad87e8f/events.js
 // https://github.com/night/betterttv/blob/d97e5b7790ea05ee4db557b0456ddf00c2c88898/src/modules/emote_menu/twitch/EmoteMenu.jsx
 // https://github.com/night/betterttv/blob/b544aee0395f04af17521fd936b79da9a0755b94/src/observers/dom.js
 // https://github.com/night/betterttv/blob/24f21e5595e105694038ade472229e0798e10b1c/src/utils/safe-event-emitter.js
@@ -20,6 +20,9 @@
 
 (function () {
   'use strict';
+
+  // eslint-disable-next-line no-undef
+  const EventEmitter = EventEmitter3; // from npm package eventemitter3
 
   const CHAT_CONTAINER =
     'section[data-test-selector="chat-room-component-layout"]';
@@ -248,242 +251,9 @@
     }
   };
 
-  class EventEmitter {
-    constructor() {
-      EventEmitter.init.call(this);
-
-      // By default EventEmitters will print a warning if more than 10 listeners are
-      // added to it. This is a useful default which helps finding memory leaks.
-      this.defaultMaxListeners = 10;
-    }
-
-    static init() {
-      if (
-        this._events === undefined ||
-        this._events === Object.getPrototypeOf(this)._events
-      ) {
-        this._events = Object.create(null);
-        this._eventsCount = 0;
-      }
-
-      this._maxListeners = this._maxListeners || undefined;
-    }
-
-    // Obviously not all Emitters should be limited to 10. This function allows
-    // that to be increased. Set to zero for unlimited.
-    setMaxListeners(n) {
-      if (typeof n !== 'number' || n < 0 || Number.isNaN(n)) {
-        throw new RangeError(
-          'The value of "n" is out of range. It must be a non-negative number. Received ' +
-            n +
-            '.'
-        );
-      }
-      this._maxListeners = n;
-      return this;
-    }
-
-    emit(type) {
-      let args = [];
-      for (let i = 1; i < arguments.length; i++) args.push(arguments[i]);
-      let doError = type === 'error';
-
-      let events = this._events;
-      if (events !== undefined) doError = doError && events.error === undefined;
-      else if (!doError) return false;
-
-      // If there is no 'error' event listener then throw.
-      if (doError) {
-        let er;
-        if (args.length > 0) er = args[0];
-        if (er instanceof Error) {
-          // Note: The comments on the `throw` lines are intentional, they show
-          // up in Node's output if this results in an unhandled exception.
-          throw er; // Unhandled 'error' event
-        }
-        // At least give some kind of context to the user
-        let err = new Error(
-          'Unhandled error.' + (er ? ' (' + er.message + ')' : '')
-        );
-        err.context = er;
-        throw err; // Unhandled 'error' event
-      }
-
-      let handler = events[type];
-
-      if (handler === undefined) return false;
-
-      const arrayClone = (arr, n) => {
-        var copy = new Array(n);
-        for (var i = 0; i < n; ++i) copy[i] = arr[i];
-        return copy;
-      };
-
-      if (typeof handler === 'function') {
-        Reflect.apply(handler, this, args);
-      } else {
-        let len = handler.length;
-        let listeners = arrayClone(handler, len);
-        for (let i = 0; i < len; ++i) Reflect.apply(listeners[i], this, args);
-      }
-
-      return true;
-    }
-
-    on(type, listener) {
-      return this._addListener(this, type, listener, false);
-    }
-
-    off(type, listener) {
-      return this.removeListener(type, listener);
-    }
-
-    // Emits a 'removeListener' event if and only if the listener was removed.
-    removeListener(type, listener) {
-      let list, events, position, i, originalListener;
-
-      this.checkListener(listener);
-
-      events = this._events;
-      if (events === undefined) return this;
-
-      list = events[type];
-      if (list === undefined) return this;
-
-      if (list === listener || list.listener === listener) {
-        if (--this._eventsCount === 0) this._events = Object.create(null);
-        else {
-          delete events[type];
-          if (events.removeListener) {
-            this.emit('removeListener', type, list.listener || listener);
-          }
-        }
-      } else if (typeof list !== 'function') {
-        position = -1;
-
-        for (i = list.length - 1; i >= 0; i--) {
-          if (list[i] === listener || list[i].listener === listener) {
-            originalListener = list[i].listener;
-            position = i;
-            break;
-          }
-        }
-
-        if (position < 0) return this;
-
-        const spliceOne = (list, index) => {
-          for (; index + 1 < list.length; index++) {
-            list[index] = list[index + 1];
-          }
-          list.pop();
-        };
-        if (position === 0) list.shift();
-        else {
-          spliceOne(list, position);
-        }
-
-        if (list.length === 1) events[type] = list[0];
-
-        if (events.removeListener !== undefined) {
-          this.emit('removeListener', type, originalListener || listener);
-        }
-      }
-
-      return this;
-    }
-
-    checkListener(listener) {
-      if (typeof listener !== 'function') {
-        throw new TypeError(
-          'The "listener" argument must be of type Function. Received type ' +
-            typeof listener
-        );
-      }
-    }
-
-    _addListener(target, type, listener, prepend) {
-      let m;
-      let events;
-      let existing;
-
-      this.checkListener(listener);
-
-      events = target._events;
-      if (events === undefined) {
-        events = target._events = Object.create(null);
-        target._eventsCount = 0;
-      } else {
-        // To avoid recursion in the case that type === "newListener"! Before
-        // adding it to the listeners, first emit "newListener".
-        if (events.newListener !== undefined) {
-          target.emit(
-            'newListener',
-            type,
-            listener.listener ? listener.listener : listener
-          );
-
-          // Re-assign `events` because a newListener handler could have caused the
-          // this._events to be assigned to a new object
-          events = target._events;
-        }
-        existing = events[type];
-      }
-
-      if (existing === undefined) {
-        // Optimize the case of one listener. Don't need the extra array object.
-        existing = events[type] = listener;
-        ++target._eventsCount;
-      } else {
-        if (typeof existing === 'function') {
-          // Adding the second element, need to change to array.
-          existing = events[type] = prepend
-            ? [listener, existing]
-            : [existing, listener];
-          // If we've already got an array, just append.
-        } else if (prepend) {
-          existing.unshift(listener);
-        } else {
-          existing.push(listener);
-        }
-
-        // Check for listener leak
-        const _getMaxListeners = (that) => {
-          if (that._maxListeners === undefined) {
-            return EventEmitter.defaultMaxListeners;
-          }
-          return that._maxListeners;
-        };
-        m = _getMaxListeners(target);
-        if (m > 0 && existing.length > m && !existing.warned) {
-          existing.warned = true;
-          // No error code for this since it is a Warning
-          // eslint-disable-next-line no-restricted-syntax
-          let w = new Error(
-            'Possible EventEmitter memory leak detected. ' +
-              existing.length +
-              ' ' +
-              String(type) +
-              ' listeners ' +
-              'added. Use emitter.setMaxListeners() to ' +
-              'increase limit'
-          );
-          w.name = 'MaxListenersExceededWarning';
-          w.emitter = target;
-          w.type = type;
-          w.count = existing.length;
-          console.warn(w);
-        }
-      }
-
-      return target;
-    }
-  }
-
   class SafeEventEmitter extends EventEmitter {
     constructor() {
       super();
-
-      this.setMaxListeners(100);
     }
 
     on(type, listener) {
