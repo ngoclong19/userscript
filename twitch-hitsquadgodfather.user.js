@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Twitch - hitsquadgodfather
 // @namespace       long-hoang.name.vn
-// @version         0.0.3
+// @version         0.0.4
 // @description     🤖 Auto send chat commands on button click!
 // @description:vi  🤖 Tự động gửi lệnh trò chuyện khi nhấp vào nút!
 // @author          ngoclong19
@@ -18,11 +18,12 @@
 // https://github.com/night/betterttv/blob/24f21e5595e105694038ade472229e0798e10b1c/src/utils/safe-event-emitter.js
 // https://github.com/night/betterttv/blob/47e4083decf3880ea094b82d31278b6beec13bb8/src/utils/twitch.js
 
-(function () {
-  'use strict';
+'use strict';
 
-  // eslint-disable-next-line no-undef
-  const EventEmitter = EventEmitter3; // from npm package eventemitter3
+/* global globalThis */
+
+(function () {
+  const EventEmitter = globalThis.EventEmitter3; // from npm package eventemitter3
 
   const CHAT_CONTAINER =
     'section[data-test-selector="chat-room-component-layout"]';
@@ -114,6 +115,7 @@
     rightContainer.insertBefore(buttonContainer, rightContainer.firstChild);
 
     const button = document.createElement('button');
+    // https://fontawesome.com/icons/robot?s=solid&f=classic
     button.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Pro 6.2.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2022 Fonticons, Inc. --><path d="M320 0c17.7 0 32 14.3 32 32V96H480c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H160c-35.3 0-64-28.7-64-64V160c0-35.3 28.7-64 64-64H288V32c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H208zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H304zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H400zM264 256c0-22.1-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40s40-17.9 40-40zm152 40c22.1 0 40-17.9 40-40s-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40zM48 224H64V416H48c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H576V224h16z"/></svg>';
     button.style.width = button.style.height = '2rem';
