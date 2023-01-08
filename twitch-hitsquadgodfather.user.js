@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            Twitch - hitsquadgodfather
 // @namespace       long-hoang.name.vn
-// @version         0.0.4
+// @version         0.0.5
 // @description     🤖 Auto send chat commands on button click!
 // @description:vi  🤖 Tự động gửi lệnh trò chuyện khi nhấp vào nút!
 // @author          ngoclong19
@@ -29,7 +29,6 @@
     'section[data-test-selector="chat-room-component-layout"]';
   const CHAT_SETTINGS_BUTTON_CONTAINER_SELECTOR =
     '.chat-input div[data-test-selector="chat-input-buttons-container"]';
-  const MSG_INTERVAL = 1500;
   const IGNORED_HTML_TAGS = new Set([
     'BR',
     'HEAD',
@@ -38,6 +37,8 @@
     'SCRIPT',
     'STYLE',
   ]);
+
+  const MSG_INTERVAL = 2000;
 
   let observer;
   const observedIds = Object.create(null);
