@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name            Twitch - hitsquadgodfather
-// @namespace       long-hoang.name.vn
-// @version         0.0.5
+// @namespace       ngoclong19.github.io
+// @version         0.0.6
 // @description     🤖 Auto send chat commands on button click!
 // @description:vi  🤖 Tự động gửi lệnh trò chuyện khi nhấp vào nút!
 // @author          ngoclong19
 // @match           https://www.twitch.tv/hitsquadgodfather
-// @icon            https://www.google.com.vn/s2/favicons?sz=64&domain=twitch.tv
+// @icon            https://www.twitch.tv/favicon.ico
 // @grant           none
 // @source          https://github.com/ngoclong19/userscripts
 // @require         https://cdn.jsdelivr.net/npm/eventemitter3@5.0.0/dist/eventemitter3.umd.min.js
@@ -16,7 +16,7 @@
 // https://github.com/night/betterttv/blob/d97e5b7790ea05ee4db557b0456ddf00c2c88898/src/modules/emote_menu/twitch/EmoteMenu.jsx
 // https://github.com/night/betterttv/blob/b544aee0395f04af17521fd936b79da9a0755b94/src/observers/dom.js
 // https://github.com/night/betterttv/blob/24f21e5595e105694038ade472229e0798e10b1c/src/utils/safe-event-emitter.js
-// https://github.com/night/betterttv/blob/47e4083decf3880ea094b82d31278b6beec13bb8/src/utils/twitch.js
+// https://github.com/night/betterttv/blob/df5615a00e71c30785b72af1a8deada4df5df7f3/src/utils/twitch.js
 
 'use strict';
 
@@ -38,7 +38,7 @@
     'STYLE',
   ]);
 
-  const MSG_INTERVAL = 2000;
+  const MSG_INTERVAL = 500 * 5;
 
   let observer;
   const observedIds = Object.create(null);
@@ -79,7 +79,7 @@
     let currentChat;
     try {
       const node = searchReactParents(
-        getReactInstance(document.querySelector(CHAT_CONTAINER).firstChild),
+        getReactInstance(document.querySelector(CHAT_CONTAINER)),
         (n) =>
           n.stateNode && n.stateNode.props && n.stateNode.props.onSendMessage
       );
@@ -118,7 +118,7 @@
     const button = document.createElement('button');
     // https://fontawesome.com/icons/robot?s=solid&f=classic
     button.innerHTML =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Pro 6.2.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2022 Fonticons, Inc. --><path d="M320 0c17.7 0 32 14.3 32 32V96H480c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H160c-35.3 0-64-28.7-64-64V160c0-35.3 28.7-64 64-64H288V32c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H208zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H304zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H400zM264 256c0-22.1-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40s40-17.9 40-40zm152 40c22.1 0 40-17.9 40-40s-17.9-40-40-40s-40 17.9-40 40s17.9 40 40 40zM48 224H64V416H48c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H576V224h16z"/></svg>';
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Pro 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2023 Fonticons, Inc. --><path d="M320 0c17.7 0 32 14.3 32 32V96H472c39.8 0 72 32.2 72 72V440c0 39.8-32.2 72-72 72H168c-39.8 0-72-32.2-72-72V168c0-39.8 32.2-72 72-72H288V32c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H208zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H304zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s-7.2-16-16-16H400zM264 256a40 40 0 1 0 -80 0 40 40 0 1 0 80 0zm152 40a40 40 0 1 0 0-80 40 40 0 1 0 0 80zM48 224H64V416H48c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H576V224h16z"/></svg>';
     button.style.width = button.style.height = '2rem';
     button.firstChild.style.fill = 'currentcolor';
     button.onclick = clickHandler;
